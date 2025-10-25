@@ -1,0 +1,50 @@
+name: tang_ledger
+description: Tang Ledger - Personal finance tracker with encrypted sync.
+publish_to: "none"
+version: 0.1.0+1
+
+environment:
+  sdk: '>=3.5.0 <4.0.0'
+  flutter: '>=3.22.0'
+
+dependencies:
+  flutter:
+    sdk: flutter
+  flutter_localizations:
+    sdk: flutter
+  cupertino_icons: ^1.0.8
+  flutter_riverpod: ^2.5.1
+  riverpod_annotation: ^2.3.0
+  freezed_annotation: ^2.4.1
+  json_annotation: ^4.9.0
+  drift: ^2.16.0
+  sqlite3_flutter_libs: ^0.5.23
+  path_provider: ^2.1.2
+  cryptography: ^2.7.0
+  encrypt: ^5.0.1
+  flutter_local_notifications: ^17.1.2
+  timezone: ^0.9.2
+  fl_chart: ^0.68.0
+  intl: ^0.20.2
+  http: ^1.2.1
+  file_picker: ^8.0.0
+  csv: ^6.0.0
+  collection: ^1.18.0
+  uuid: ^4.5.1
+  excel: ^4.0.2
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^3.0.2
+  build_runner: ^2.4.9
+  riverpod_generator: ^2.3.3
+  freezed: ^2.5.2
+  json_serializable: ^6.7.1
+
+flutter:
+  uses-material-design: true
+  assets:
+    - assets/
+
+# L10n handled manually via custom delegates (no build step required).
