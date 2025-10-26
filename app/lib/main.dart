@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
+import 'package:hive_flutter/hive_flutter.dart';
 
 import 'l10n/app_localizations.dart';
 import 'state/providers.dart';
@@ -14,8 +15,11 @@ import 'ui/screens/import_excel.dart';
 import 'ui/screens/rates.dart';
 import 'ui/screens/settings.dart';
 
-void main() {
+Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  await Hive.initFlutter();
+  await Hive.openBox<String>('rate_latest');
+  await Hive.openBox<String>('rate_series');
   runApp(const ProviderScope(child: TangLedgerApp()));
 }
 

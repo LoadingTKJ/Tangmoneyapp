@@ -39,12 +39,66 @@ class LedgerService {
     return account;
   }
 
+  Future<Category> createCategory({
+    required String name,
+    String? code,
+  }) async {
+    final String trimmedName = name.trim();
+    if (trimmedName.isEmpty) {
+      throw ArgumentError('类别名称不能为空');
+    }
+
+    String resolvedCode;
+    if (code != null && code.trim().isNotEmpty) {
+      resolvedCode = code.trim().toUpperCase();
+    } else {
+      resolvedCode = _generateCategoryCode(trimmedName);
+    }
+
+    final Category category = Category(
+      code: resolvedCode,
+      name: trimmedName,
+    );
+    await database.addCategory(category);
+    return category;
+  }
+
   Future<void> updateAccountBalance(String accountId, double balance) {
     return database.updateAccountBalance(accountId, balance);
   }
 
   Future<void> addCurrency(String code) async {
     database.addCurrency(code.toUpperCase());
+  }
+
+  String _generateCategoryCode(String name) {
+    final String cleaned =
+        name.toUpperCase().replaceAll(RegExp('[^A-Z0-9]'), '');
+    if (cleaned.isNotEmpty) {
+      int length = 1;
+      String candidate = cleaned.substring(0, length);
+      while (_categoryExists(candidate)) {
+        length++;
+        if (length <= cleaned.length) {
+          candidate = cleaned.substring(0, length);
+        } else {
+          candidate = _uuid.v4().substring(0, 4).toUpperCase();
+        }
+      }
+      return candidate;
+    }
+
+    String candidate;
+    do {
+      candidate = _uuid.v4().substring(0, 4).toUpperCase();
+    } while (_categoryExists(candidate));
+    return candidate;
+  }
+
+  bool _categoryExists(String code) {
+    final String upper = code.toUpperCase();
+    return database.categories
+        .any((Category element) => element.code.toUpperCase() == upper);
   }
 
   Future<double> computeTotalAssets(String baseCurrency) async {
@@ -207,10 +261,8 @@ class LedgerService {
     }
   }
 
-  Future<void> _applyTransactionToAccount(
-      LedgerTransaction transaction) async {
-    final Account? account =
-        database.findAccountById(transaction.accountId);
+  Future<void> _applyTransactionToAccount(LedgerTransaction transaction) async {
+    final Account? account = database.findAccountById(transaction.accountId);
     if (account == null) {
       return;
     }
@@ -221,8 +273,7 @@ class LedgerService {
     final String accountCurrency = account.currency.toUpperCase();
     final String originalCurrency =
         transaction.originalAmount.currency.toUpperCase();
-    double amountInAccountCurrency =
-        transaction.originalAmount.value;
+    double amountInAccountCurrency = transaction.originalAmount.value;
 
     if (originalCurrency != accountCurrency) {
       try {
@@ -233,8 +284,7 @@ class LedgerService {
           to: account.currency,
         );
       } on RateNotFoundException {
-        if (transaction.baseCurrency.toUpperCase() ==
-            accountCurrency) {
+        if (transaction.baseCurrency.toUpperCase() == accountCurrency) {
           amountInAccountCurrency = transaction.baseAmount.value;
         }
       }

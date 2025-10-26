@@ -23,6 +23,8 @@ class LedgerDatabase {
 
   final StreamController<List<Account>> _accountStream =
       StreamController<List<Account>>.broadcast();
+  final StreamController<List<Category>> _categoryStream =
+      StreamController<List<Category>>.broadcast();
   final StreamController<Set<String>> _currencyStream =
       StreamController<Set<String>>.broadcast();
   final StreamController<List<LedgerTransaction>> _transactionStream =
@@ -44,6 +46,10 @@ class LedgerDatabase {
 
   Stream<List<Account>> watchAccounts() {
     return _accountStream.stream;
+  }
+
+  Stream<List<Category>> watchCategories() {
+    return _categoryStream.stream;
   }
 
   Stream<Set<String>> watchCurrencies() {
@@ -88,6 +94,19 @@ class LedgerDatabase {
     addCurrency(account.currency);
     _notifyAccounts();
     return account;
+  }
+
+  Future<Category> addCategory(Category category) async {
+    final String code = category.code.toUpperCase();
+    final bool exists = _categories.any(
+      (Category element) => element.code.toUpperCase() == code,
+    );
+    if (exists) {
+      throw ArgumentError('类别代码已存在：$code');
+    }
+    _categories.add(category);
+    _notifyCategories();
+    return category;
   }
 
   Future<void> updateAccount(Account updated) async {
@@ -285,6 +304,7 @@ class LedgerDatabase {
 
   void dispose() {
     _accountStream.close();
+    _categoryStream.close();
     _currencyStream.close();
     _transactionStream.close();
   }
@@ -303,6 +323,13 @@ class LedgerDatabase {
       return;
     }
     _accountStream.add(List<Account>.unmodifiable(_accounts));
+  }
+
+  void _notifyCategories() {
+    if (_categoryStream.isClosed) {
+      return;
+    }
+    _categoryStream.add(List<Category>.unmodifiable(_categories));
   }
 
   void _notifyCurrencies() {
@@ -361,6 +388,7 @@ class LedgerDatabase {
       Category(code: 'I', name: '通讯'),
       Category(code: 'P', name: '玩'),
     ]);
+    _notifyCategories();
 
     _transactions.addAll(<LedgerTransaction>[
       LedgerTransaction(

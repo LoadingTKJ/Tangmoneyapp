@@ -100,6 +100,7 @@ class _AddTransactionScreenState extends ConsumerState<AddTransactionScreen> {
   Widget build(BuildContext context) {
     final AppLocalizations l10n = AppLocalizations.of(context);
     final List<Account> accounts = ref.watch(accountListProvider);
+    final List<Category> categoryList = ref.watch(categoryListProvider);
     final String baseCurrency = ref.watch(selectedBaseCurrencyProvider);
     final List<String> currencyOptions = ref.watch(currencyOptionsProvider);
     final List<String> resolvedCurrencies = currencyOptions.isNotEmpty
@@ -129,14 +130,22 @@ class _AddTransactionScreenState extends ConsumerState<AddTransactionScreen> {
       _accountId = accounts.first.id;
     }
     final Map<String, Category> categories = ref.watch(categoryMapProvider);
-    if (_category == null && categories.isNotEmpty) {
-      _category = categories.keys.first;
+    if (_category == null && categoryList.isNotEmpty) {
+      _category = categoryList.first.code;
+    } else if (_category != null &&
+        categories[_category!] == null &&
+        categoryList.isNotEmpty) {
+      _category = categoryList.first.code;
     }
 
     return Container(
       decoration: const BoxDecoration(
         gradient: LinearGradient(
-          colors: <Color>[Color(0xFF6366F1), Color(0xFF8B5CF6), Color(0xFF3B82F6)],
+          colors: <Color>[
+            Color(0xFF6366F1),
+            Color(0xFF8B5CF6),
+            Color(0xFF3B82F6)
+          ],
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
         ),
@@ -178,159 +187,166 @@ class _AddTransactionScreenState extends ConsumerState<AddTransactionScreen> {
                     ),
                     const SizedBox(height: 16),
                     SegmentedButton<String>(
-              segments: <ButtonSegment<String>>[
-                ButtonSegment<String>(
-                  value: 'expense',
-                  label: Text(l10n.text('expense')),
-                  icon: const Icon(Icons.trending_down),
-                ),
-                ButtonSegment<String>(
-                  value: 'income',
-                  label: Text(l10n.text('income')),
-                  icon: const Icon(Icons.trending_up),
-                ),
-              ],
-              selected: {_direction},
-              onSelectionChanged: (value) {
-                setState(() => _direction = value.first);
-              },
-            ),
+                      segments: <ButtonSegment<String>>[
+                        ButtonSegment<String>(
+                          value: 'expense',
+                          label: Text(l10n.text('expense')),
+                          icon: const Icon(Icons.trending_down),
+                        ),
+                        ButtonSegment<String>(
+                          value: 'income',
+                          label: Text(l10n.text('income')),
+                          icon: const Icon(Icons.trending_up),
+                        ),
+                      ],
+                      selected: {_direction},
+                      onSelectionChanged: (value) {
+                        setState(() => _direction = value.first);
+                      },
+                    ),
                     const SizedBox(height: 16),
                     TextFormField(
-              readOnly: true,
-              decoration: InputDecoration(
-                labelText: l10n.text('date'),
-                suffixIcon: const Icon(Icons.calendar_today),
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(20),
-                ),
-              ),
-              controller: _dateController,
-              onTap: () async {
-                final DateTime? picked = await showDatePicker(
-                  context: context,
-                  initialDate: _date,
-                  firstDate: DateTime(2000),
-                  lastDate: DateTime(2100),
-                );
-                if (picked != null) {
-                  setState(() {
-                    _date = picked;
-                    _dateController.text = formatDate(picked);
-                  });
-                }
-              },
-            ),
+                      readOnly: true,
+                      decoration: InputDecoration(
+                        labelText: l10n.text('date'),
+                        suffixIcon: const Icon(Icons.calendar_today),
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(20),
+                        ),
+                      ),
+                      controller: _dateController,
+                      onTap: () async {
+                        final DateTime? picked = await showDatePicker(
+                          context: context,
+                          initialDate: _date,
+                          firstDate: DateTime(2000),
+                          lastDate: DateTime(2100),
+                        );
+                        if (picked != null) {
+                          setState(() {
+                            _date = picked;
+                            _dateController.text = formatDate(picked);
+                          });
+                        }
+                      },
+                    ),
                     const SizedBox(height: 16),
                     DropdownButtonFormField<String>(
-              key: ValueKey<String?>(_accountId),
-              initialValue: _accountId,
-              decoration: InputDecoration(
-                labelText: l10n.text('account'),
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(20),
-                ),
-              ),
-              items: accounts
-                  .map(
-                    (Account account) => DropdownMenuItem<String>(
-                      value: account.id,
-                      child: Text('${account.name} (${account.currency})'),
+                      key: ValueKey<String?>(_accountId),
+                      initialValue: _accountId,
+                      decoration: InputDecoration(
+                        labelText: l10n.text('account'),
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(20),
+                        ),
+                      ),
+                      items: accounts
+                          .map(
+                            (Account account) => DropdownMenuItem<String>(
+                              value: account.id,
+                              child:
+                                  Text('${account.name} (${account.currency})'),
+                            ),
+                          )
+                          .toList(),
+                      onChanged: (String? value) {
+                        if (value == null) {
+                          return;
+                        }
+                        setState(() {
+                          _accountId = value;
+                          if (!_currencyUserOverride) {
+                            final Account account = accounts.firstWhere(
+                              (Account element) => element.id == value,
+                              orElse: () => accounts.first,
+                            );
+                            _currency = account.currency;
+                          }
+                        });
+                      },
+                      validator: (String? value) =>
+                          value == null ? '请选择账户' : null,
                     ),
-                  )
-                  .toList(),
-              onChanged: (String? value) {
-                if (value == null) {
-                  return;
-                }
-                setState(() {
-                  _accountId = value;
-                  if (!_currencyUserOverride) {
-                    final Account account = accounts.firstWhere(
-                      (Account element) => element.id == value,
-                      orElse: () => accounts.first,
-                    );
-                    _currency = account.currency;
-                  }
-                });
-              },
-              validator: (String? value) => value == null ? '请选择账户' : null,
-            ),
                     const SizedBox(height: 16),
                     Wrap(
-              spacing: 12,
-              runSpacing: 12,
-              children: [
-                for (final MapEntry<String, Category> entry
-                    in categories.entries)
-                  CategoryChip(
-                    code: entry.key,
-                    label: entry.value.name,
-                    selected: entry.key == _category,
-                    onTap: () => setState(() => _category = entry.key),
-                ),
-              ],
-            ),
+                      spacing: 12,
+                      runSpacing: 12,
+                      children: [
+                        for (final Category category in categoryList)
+                          CategoryChip(
+                            code: category.code,
+                            label: category.name,
+                            selected: category.code == _category,
+                            onTap: () =>
+                                setState(() => _category = category.code),
+                          ),
+                        ActionChip(
+                          avatar: const Icon(Icons.add, size: 18),
+                          label: const Text('新增类别'),
+                          onPressed: _showAddCategoryDialog,
+                        ),
+                      ],
+                    ),
                     const SizedBox(height: 16),
                     TextFormField(
-              controller: _projectController,
-              decoration: InputDecoration(
-                labelText: l10n.text('project'),
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(20),
-                ),
-              ),
-            ),
+                      controller: _projectController,
+                      decoration: InputDecoration(
+                        labelText: l10n.text('project'),
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(20),
+                        ),
+                      ),
+                    ),
                     const SizedBox(height: 16),
                     AmountInput(
-              controller: _amountController,
-              label: l10n.text('amount'),
-              onChanged: (_) => _formKey.currentState?.validate(),
-              validator: (String? value) {
-                final double? amount =
-                    double.tryParse((value ?? '').replaceAll(',', ''));
-                if (amount == null || amount <= 0) {
-                  return '请输入有效金额';
-                }
-                return null;
-              },
-            ),
+                      controller: _amountController,
+                      label: l10n.text('amount'),
+                      onChanged: (_) => _formKey.currentState?.validate(),
+                      validator: (String? value) {
+                        final double? amount =
+                            double.tryParse((value ?? '').replaceAll(',', ''));
+                        if (amount == null || amount <= 0) {
+                          return '请输入有效金额';
+                        }
+                        return null;
+                      },
+                    ),
                     const SizedBox(height: 16),
                     CurrencyPicker(
-              initialValue: _currency,
-              currencies: resolvedCurrencies,
-              onChanged: (String? value) {
-                if (value != null) {
-                  setState(() {
-                    _currency = value;
-                    _currencyUserOverride = true;
-                  });
-                }
-              },
-            ),
+                      initialValue: _currency,
+                      currencies: resolvedCurrencies,
+                      onChanged: (String? value) {
+                        if (value != null) {
+                          setState(() {
+                            _currency = value;
+                            _currencyUserOverride = true;
+                          });
+                        }
+                      },
+                    ),
                     const SizedBox(height: 16),
                     TextFormField(
-              controller: _noteController,
-              maxLines: 3,
-              decoration: InputDecoration(
-                labelText: l10n.text('note'),
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(20),
-                ),
-              ),
-            ),
+                      controller: _noteController,
+                      maxLines: 3,
+                      decoration: InputDecoration(
+                        labelText: l10n.text('note'),
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(20),
+                        ),
+                      ),
+                    ),
                     const SizedBox(height: 24),
                     FilledButton.icon(
-              onPressed: _isSaving ? null : _save,
-              icon: _isSaving
-                  ? const SizedBox(
-                      width: 16,
-                      height: 16,
-                      child: CircularProgressIndicator(strokeWidth: 2),
-                    )
-                  : const Icon(Icons.save),
-              label: Text(l10n.text('save')),
-            ),
+                      onPressed: _isSaving ? null : _save,
+                      icon: _isSaving
+                          ? const SizedBox(
+                              width: 16,
+                              height: 16,
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            )
+                          : const Icon(Icons.save),
+                      label: Text(l10n.text('save')),
+                    ),
                   ],
                 ),
               ),
@@ -339,5 +355,55 @@ class _AddTransactionScreenState extends ConsumerState<AddTransactionScreen> {
         ),
       ),
     );
+  }
+
+  Future<void> _showAddCategoryDialog() async {
+    final TextEditingController controller = TextEditingController();
+    final bool? confirmed = await showDialog<bool>(
+      context: context,
+      builder: (BuildContext context) {
+        return AlertDialog(
+          title: const Text('新增类别'),
+          content: TextField(
+            controller: controller,
+            decoration: const InputDecoration(
+              labelText: '类别名称',
+              hintText: '例如：健身、宠物开销',
+            ),
+          ),
+          actions: <Widget>[
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(false),
+              child: const Text('取消'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.of(context).pop(true),
+              child: const Text('添加'),
+            ),
+          ],
+        );
+      },
+    );
+
+    if (confirmed == true) {
+      final String name = controller.text.trim();
+      if (name.isEmpty) {
+        return;
+      }
+      try {
+        final LedgerService service = ref.read(ledgerServiceProvider);
+        final Category category = await service.createCategory(name: name);
+        if (!mounted) return;
+        setState(() => _category = category.code);
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('已添加类别：${category.name}')),
+        );
+      } catch (error) {
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('新增类别失败：$error')),
+        );
+      }
+    }
   }
 }

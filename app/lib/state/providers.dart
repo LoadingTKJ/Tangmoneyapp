@@ -1,7 +1,9 @@
 import 'dart:async';
 
+import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:hive/hive.dart';
 
 import '../data/db.dart';
 import '../data/models.dart';
@@ -9,13 +11,38 @@ import '../data/rate_provider.dart';
 import '../domain/services/ledger_service.dart';
 import '../domain/services/recurring_service.dart';
 import '../domain/services/report_service.dart';
+import '../repository/rate_repository.dart';
+import '../services/http_client.dart';
+import '../services/rate_service.dart';
 
 final databaseProvider = Provider<LedgerDatabase>(
   (ref) => LedgerDatabase.instance,
 );
 
+final dioProvider = Provider<Dio>((ref) => createDio());
+
+final rateServiceProvider = Provider<RateService>((ref) {
+  final Dio dio = ref.watch(dioProvider);
+  return LiveRateService(dio: dio);
+});
+
+final rateRepositoryProvider = Provider<RateRepository>((ref) {
+  final RateService service = ref.watch(rateServiceProvider);
+  final Box<String> latestBox = Hive.box<String>('rate_latest');
+  final Box<String> seriesBox = Hive.box<String>('rate_series');
+  final RateRepository repository = RateRepository(
+    service: service,
+    latestBox: latestBox,
+    seriesBox: seriesBox,
+  );
+  return repository;
+});
+
 final rateProvider = Provider<RateProvider>(
-  (ref) => RateProvider(database: ref.watch(databaseProvider)),
+  (ref) => RateProvider(
+    database: ref.watch(databaseProvider),
+    repository: ref.watch(rateRepositoryProvider),
+  ),
 );
 
 final ledgerServiceProvider = Provider<LedgerService>(
@@ -49,6 +76,17 @@ final accountListProvider = Provider<List<Account>>((ref) {
   return ref.watch(accountStreamProvider).maybeWhen(
         data: (List<Account> value) => value,
         orElse: () => ref.watch(databaseProvider).accounts,
+      );
+});
+
+final categoryStreamProvider = StreamProvider<List<Category>>((ref) {
+  return ref.watch(databaseProvider).watchCategories();
+});
+
+final categoryListProvider = Provider<List<Category>>((ref) {
+  return ref.watch(categoryStreamProvider).maybeWhen(
+        data: (List<Category> value) => value,
+        orElse: () => ref.watch(databaseProvider).categories,
       );
 });
 
@@ -98,9 +136,9 @@ final monthlySummaryProvider = Provider<MonthlySummary>((ref) {
 });
 
 final categoryMapProvider = Provider<Map<String, Category>>((ref) {
-  final LedgerDatabase db = ref.watch(databaseProvider);
+  final List<Category> categories = ref.watch(categoryListProvider);
   return <String, Category>{
-    for (final Category category in db.categories) category.code: category,
+    for (final Category category in categories) category.code: category,
   };
 });
 
@@ -109,11 +147,8 @@ final currencyOptionsProvider = Provider<List<String>>((ref) {
         data: (Set<String> value) => value,
         orElse: () => ref.watch(databaseProvider).currencies,
       );
-  final List<String> list = codes
-      .map((String code) => code.toUpperCase())
-      .toSet()
-      .toList()
-    ..sort();
+  final List<String> list =
+      codes.map((String code) => code.toUpperCase()).toSet().toList()..sort();
   return list;
 });
 
@@ -162,22 +197,13 @@ final ratesDateRangeProvider = Provider<DateRange>((ref) {
   );
 });
 
-final ratesLatestProvider = FutureProvider.autoDispose<Map<String, double>>(
-  (ref) async {
-    final String base = ref.watch(ratesBaseProvider);
-    final String target = ref.watch(ratesTargetProvider);
-    final RateProvider svc = ref.watch(rateProvider);
-    final List<String> all = List<String>.from(ref.watch(currencyOptionsProvider));
-    all.removeWhere((String code) => code.toUpperCase() == base.toUpperCase());
-    if (!all.contains(target)) {
-      all.add(target);
-    }
-    final List<String> symbols = all.isEmpty
-        ? <String>[target.toUpperCase()]
-        : all;
-    return svc.fetchLatestRates(base, symbols);
-  },
-);
+final ratesLatestProvider =
+    StreamProvider.autoDispose<RateSnapshot<RateLatest>>((ref) {
+  final String base = ref.watch(ratesBaseProvider);
+  final String target = ref.watch(ratesTargetProvider);
+  final RateRepository repository = ref.watch(rateRepositoryProvider);
+  return repository.watchLatest(base, target);
+});
 
 final totalAssetsProvider = FutureProvider<double>((ref) async {
   final LedgerService service = ref.watch(ledgerServiceProvider);
@@ -185,15 +211,14 @@ final totalAssetsProvider = FutureProvider<double>((ref) async {
   return service.computeTotalAssets(base);
 });
 
-final ratesSeriesProvider = FutureProvider.autoDispose<List<RateSeriesPoint>>(
-  (ref) async {
-    final String base = ref.watch(ratesBaseProvider);
-    final String target = ref.watch(ratesTargetProvider);
-    final DateRange range = ref.watch(ratesDateRangeProvider);
-    final RateProvider svc = ref.watch(rateProvider);
-    return svc.fetchTimeseries(base, target, range.start, range.end);
-  },
-);
+final ratesSeriesProvider =
+    StreamProvider.autoDispose<RateSnapshot<RateSeries>>((ref) {
+  final String base = ref.watch(ratesBaseProvider);
+  final String target = ref.watch(ratesTargetProvider);
+  final DateRange range = ref.watch(ratesDateRangeProvider);
+  final RateRepository repository = ref.watch(rateRepositoryProvider);
+  return repository.watchSeries(base, target, range.start, range.end);
+});
 
 final analyticsRangePresetProvider = StateProvider<AnalyticsRangePreset>(
   (ref) => AnalyticsRangePreset.thisMonth,
@@ -249,8 +274,7 @@ final analyticsSnapshotProvider =
       transaction.date.month,
       transaction.date.day,
     );
-    final _DailyBucket bucket =
-        buckets.putIfAbsent(day, () => _DailyBucket());
+    final _DailyBucket bucket = buckets.putIfAbsent(day, () => _DailyBucket());
     final double amount = await _amountInCurrency(
       transaction: transaction,
       targetCurrency: baseCurrency,
@@ -372,8 +396,7 @@ DateRange _resolveAnalyticsRange(
       return _currentMonthRange();
     case AnalyticsRangePreset.thisQuarter:
       final int quarterStartMonth = ((now.month - 1) ~/ 3) * 3 + 1;
-      final DateTime start =
-          DateTime(now.year, quarterStartMonth, 1);
+      final DateTime start = DateTime(now.year, quarterStartMonth, 1);
       return DateRange(
         start: start,
         end: _endOfDay(now),
@@ -394,7 +417,8 @@ DateRange _currentMonthRange() {
 
 List<DateTime> _enumerateDays(DateRange range) {
   final List<DateTime> days = <DateTime>[];
-  DateTime cursor = DateTime(range.start.year, range.start.month, range.start.day);
+  DateTime cursor =
+      DateTime(range.start.year, range.start.month, range.start.day);
   final DateTime end = DateTime(range.end.year, range.end.month, range.end.day);
   while (!cursor.isAfter(end)) {
     days.add(cursor);
